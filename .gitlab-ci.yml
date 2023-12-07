@@ -1,0 +1,78 @@
+image: docker
+stages:
+    - build
+    - test
+    - analyze
+    - deploy
+    - deploy_to_aks
+
+build:
+    only:
+      - pushes
+      - merge_requests
+    image: mcr.microsoft.com/dotnet/sdk:7.0
+    stage: build
+    script:
+        - "dotnet build ${PROJECT_DIRECTORY}/${PROJECT_NAME}"
+    artifacts:
+      paths:
+        - bin/
+
+test:
+    only:
+      - pushes
+      - merge_requests
+    image: mcr.microsoft.com/dotnet/sdk:7.0
+    stage: test
+    script: 
+        - "dotnet test ${PROJECT_DIRECTORY}/${PROJECT_NAME}"
+analyze:
+    only:
+          - merge_requests
+          - pushes
+    stage: analyze   
+    allow_failure: true
+    image: sonarsource/sonar-scanner-cli:latest
+    script:
+        - sonar-scanner -X
+
+build_staging_image:
+    only:
+        - pushes
+        - merge_requests
+    variables: 
+        DOCKER_HOST: tcp://docker:2376/
+        DOCKER_TLS_CERTDIR: "/certs"
+        DOCKER_TLS_VERIFY: 1
+        DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+        CONTAINER_REGISTRY_USERNAME: "$CONTAINER_REGISTRY_USERNAME"
+        CONTAINER_REGISTRY_PASSWORD: $CONTAINER_REGISTRY_PASSWORD
+        CONTAINER_REGISTRY_URL: "$CONTAINER_REGISTRY_URL"
+    services:
+        - docker:dind
+    #before_script:
+    #    - docker info
+    stage: build
+    script:
+        - docker login -u $CONTAINER_REGISTRY_USERNAME -p $CONTAINER_REGISTRY_PASSWORD $CONTAINER_REGISTRY_URL
+        - docker build -t ${SERVICE_NAME}:latest ${PROJECT_DIRECTORY}
+        - docker tag ${SERVICE_NAME} ${CONTAINER_REGISTRY_URL}/${SERVICE_NAME}:latest
+        - docker push ${CONTAINER_REGISTRY_URL}/${SERVICE_NAME}:latest
+        - docker logout
+deploy_to_aks:
+  stage: deploy_to_aks
+  variables:
+      AZ_1: $AZ_1
+      AZ_2: $AZ_2
+  image: mcr.microsoft.com/azure-cli
+  before_script:
+    - az login -u $AZ_2 -p $AZ_1 --tenant 0172c9f5-f568-42ac-9eb8-24ef84881faa
+    - az account set --subscription 4cf6ab57-baff-488b-be24-e8a961364804
+    - curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    - chmod +x kubectl
+    - mv kubectl /usr/local/bin/
+  script:
+    - az aks get-credentials --resource-group RGR-RedactiePortaal --name K8SRedactiePortaal
+    - kubectl apply -f deployment.yml
+    - kubectl apply -f service.yml
+    

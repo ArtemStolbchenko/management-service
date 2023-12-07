@@ -1,0 +1,13 @@
+FROM mcr.microsoft.com/dotnet/sdk:6.0
+
+WORKDIR /app
+
+COPY bin/Release-Linux/net6.0/linux-x64/ .
+
+ENV DOTNET_GENERATE_ASPNET_CERTIFICATE=true
+ENV ASPNETCORE_ENVIRONMENT=Development
+ENV ASPNETCORE_URLS=http://+:7168;http://+:80/;http://+:443
+
+EXPOSE 80 443 7168
+
+ENTRYPOINT ["dotnet", "management-service.dll"]
